@@ -32,9 +32,11 @@ cat << 'EOF' > /root/.openclaw/.gitignore
 .env
 *.tmp
 *.log
+*.db-wal
+*.db-shm
 EOF
 
-# 2. Build openclaw.json instantaneously with jq
+# 2. Build openclaw.json instantaneously with jq (0.01s, zero Node overhead)
 if [ ! -f "/root/.openclaw/openclaw.json" ]; then
   echo '{}' > /root/.openclaw/openclaw.json
 fi
