@@ -1,13 +1,18 @@
-
 FROM node:22-slim
 
-# Install Linux tools that OpenClaw can execute via chat
-RUN apt-get update && apt-get install -y \
-    curl wget git python3 python3-pip jq procps net-tools \
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install only lightweight Linux tools without heavy recommended packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl wget git python3 jq procps net-tools \
     && rm -rf /var/lib/apt/lists/*
 
+# Limit Node memory during install so Render's 512MB RAM doesn't crash
+ENV NODE_OPTIONS="--max-old-space-size=384"
+
 # Install OpenClaw globally
-RUN npm install -g openclaw
+RUN npm install -g openclaw --no-audit --no-fund && npm cache clean --force
 
 # Create workspace and config directory
 RUN mkdir -p /root/.openclaw/workspace
