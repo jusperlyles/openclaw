@@ -10,7 +10,6 @@ git config --global user.name "OpenClaw Render Backup"
 
 # 1. Restore state from GitHub if token & repo are set
 if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
-  # Strip any accidental trailing slash and inject token cleanly
   CLEAN_REPO=$(echo "$GITHUB_REPO" | sed 's:/*$::')
   AUTH_REPO=$(echo "$CLEAN_REPO" | sed "s|https://|https://${GITHUB_TOKEN}@|")
 
@@ -22,7 +21,6 @@ if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
     git remote set-url origin "$AUTH_REPO"
   fi
 
-  # Fetch & restore only if remote 'main' branch already exists (prevents error on empty repo)
   if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
     echo "[Backup] Restoring OpenClaw data from GitHub..."
     git fetch -q origin main
@@ -32,7 +30,6 @@ if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
   fi
 fi
 
-# Ensure workspace and .gitignore always exist after git reset
 mkdir -p /root/.openclaw/workspace
 cat << 'EOF' > /root/.openclaw/.gitignore
 .env
@@ -40,13 +37,35 @@ cat << 'EOF' > /root/.openclaw/.gitignore
 *.log
 EOF
 
-# 2. Create default openclaw.json ONLY if not already restored from GitHub
+# 2. Create default openclaw.json if not restored from GitHub
 if [ ! -f "/root/.openclaw/openclaw.json" ]; then
   echo "[Init] Creating default openclaw.json..."
-  printf '{"gateway":{"mode":"local","bind":"lan"},"tools":{"profile":"full","exec":{"ask":"off"}}}' > /root/.openclaw/openclaw.json
+  cat << 'EOF' > /root/.openclaw/openclaw.json
+{
+  "gateway": {
+    "mode": "local",
+    "bind": "lan",
+    "trustedProxies": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.1/32"],
+    "controlUi": {
+      "enabled": true,
+      "allowInsecureAuth": true
+    }
+  },
+  "tools": {
+    "profile": "full",
+    "exec": {
+      "ask": "off"
+    }
+  }
+}
+EOF
 fi
 
-# 3. Apply WhatsApp allowlist if WHATSAPP_ALLOW_FROM is set
+# 3. Always ensure trustedProxies & WhatsApp settings are applied even on restored configs
+openclaw config set gateway.trustedProxies '["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.1/32"]' >/dev/null 2>&1 || true
+openclaw config set gateway.controlUi.enabled true >/dev/null 2>&1 || true
+openclaw config set gateway.controlUi.allowInsecureAuth true >/dev/null 2>&1 || true
+
 if [ -n "$WHATSAPP_ALLOW_FROM" ]; then
   openclaw config set channels.whatsapp.enabled true >/dev/null 2>&1 || true
   openclaw config set channels.whatsapp.dmPolicy "allowlist" >/dev/null 2>&1 || true
@@ -67,13 +86,8 @@ sync_to_github() {
 }
 
 if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
-  # Push initial state right away so empty repos get initialized immediately
   sync_to_github
-
-  # Trap Render container shutdown/redeploy to save final state
   trap 'echo "[Backup] Shutting down, pushing final backup..."; sync_to_github; kill -TERM "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; exit 0' SIGTERM SIGINT
-
-  # Sync every 5 minutes in the background
   (
     while true; do
       sleep 300
@@ -82,11 +96,18 @@ if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
   ) &
 fi
 
-# 5. Launch OpenClaw gateway using your exact original port & bind settings
+# 5. Print WhatsApp QR code in Render Logs on first run if not paired yet
+if [ -n "$WHATSAPP_ALLOW_FROM" ] && [ ! -d "/root/.openclaw/credentials/whatsapp" ]; then
+  echo "=========================================="
+  echo "[WhatsApp] Not paired yet! Generating QR code in logs..."
+  echo "Open WhatsApp -> Linked Devices -> Link a Device and scan below:"
+  echo "=========================================="
+  timeout 60 openclaw channels login --channel whatsapp || true
+  sync_to_github
+fi
+
+# 6. Launch OpenClaw gateway
 cd /root/.openclaw/workspace
-exec_cmd() {
-  openclaw gateway run --port "${PORT:-10000}" --bind lan &
-  PID=$!
-  wait "$PID"
-}
-exec_cmd
+openclaw gateway run --port "${PORT:-10000}" --bind lan &
+PID=$!
+wait $PID
