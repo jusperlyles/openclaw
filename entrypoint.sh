@@ -4,7 +4,6 @@ set -e
 mkdir -p /root/.openclaw/workspace
 cd /root/.openclaw
 
-# Configure Git identity for automated commits
 git config --global user.email "openclaw-bot@render.local"
 git config --global user.name "OpenClaw Render Backup"
 
@@ -37,7 +36,7 @@ cat << 'EOF' > /root/.openclaw/.gitignore
 *.log
 EOF
 
-# 2. Create default openclaw.json if not restored from GitHub
+# 2. Create clean openclaw.json if not restored from GitHub
 if [ ! -f "/root/.openclaw/openclaw.json" ]; then
   echo "[Init] Creating default openclaw.json..."
   cat << 'EOF' > /root/.openclaw/openclaw.json
@@ -45,11 +44,7 @@ if [ ! -f "/root/.openclaw/openclaw.json" ]; then
   "gateway": {
     "mode": "local",
     "bind": "lan",
-    "trustedProxies": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.1/32"],
-    "controlUi": {
-      "enabled": true,
-      "allowInsecureAuth": true
-    }
+    "trustedProxies": ["0.0.0.0/0"]
   },
   "tools": {
     "profile": "full",
@@ -61,18 +56,16 @@ if [ ! -f "/root/.openclaw/openclaw.json" ]; then
 EOF
 fi
 
-# 3. Always ensure trustedProxies & WhatsApp settings are applied even on restored configs
-openclaw config set gateway.trustedProxies '["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.1/32"]' >/dev/null 2>&1 || true
-openclaw config set gateway.controlUi.enabled true >/dev/null 2>&1 || true
-openclaw config set gateway.controlUi.allowInsecureAuth true >/dev/null 2>&1 || true
+# 3. Apply proxy & WhatsApp settings cleanly
+openclaw config set gateway.trustedProxies '["0.0.0.0/0"]' || true
 
 if [ -n "$WHATSAPP_ALLOW_FROM" ]; then
-  openclaw config set channels.whatsapp.enabled true >/dev/null 2>&1 || true
-  openclaw config set channels.whatsapp.dmPolicy "allowlist" >/dev/null 2>&1 || true
-  openclaw config set channels.whatsapp.allowFrom "[\"$WHATSAPP_ALLOW_FROM\"]" >/dev/null 2>&1 || true
+  openclaw config set channels.whatsapp.enabled true || true
+  openclaw config set channels.whatsapp.dmPolicy "allowlist" || true
+  openclaw config set channels.whatsapp.allowFrom "[\"$WHATSAPP_ALLOW_FROM\"]" || true
 fi
 
-# 4. Define GitHub sync function & background loop
+# 4. GitHub backup sync function & background loop
 sync_to_github() {
   if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
     cd /root/.openclaw
@@ -96,17 +89,8 @@ if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
   ) &
 fi
 
-# 5. Print WhatsApp QR code in Render Logs on first run if not paired yet
-if [ -n "$WHATSAPP_ALLOW_FROM" ] && [ ! -d "/root/.openclaw/credentials/whatsapp" ]; then
-  echo "=========================================="
-  echo "[WhatsApp] Not paired yet! Generating QR code in logs..."
-  echo "Open WhatsApp -> Linked Devices -> Link a Device and scan below:"
-  echo "=========================================="
-  timeout 60 openclaw channels login --channel whatsapp || true
-  sync_to_github
-fi
-
-# 6. Launch OpenClaw gateway
+# 5. Start OpenClaw gateway immediately so Render detects port 10000 right away
+echo "[Gateway] Starting OpenClaw on port ${PORT:-10000}..."
 cd /root/.openclaw/workspace
 openclaw gateway run --port "${PORT:-10000}" --bind lan &
 PID=$!
