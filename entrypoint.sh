@@ -4,11 +4,10 @@ set -e
 mkdir -p /root/.openclaw/workspace
 cd /root/.openclaw
 
-# Configure Git identity for automated commits
 git config --global user.email "openclaw-bot@render.local"
 git config --global user.name "OpenClaw Render Backup"
 
-# 1. Restore state (chat history, config, & WhatsApp session) from GitHub
+# 1. Restore state from GitHub
 if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
   CLEAN_REPO=$(echo "$GITHUB_REPO" | sed 's:/*$::')
   AUTH_REPO=$(echo "$CLEAN_REPO" | sed "s|https://|https://${GITHUB_TOKEN}@|")
@@ -25,12 +24,9 @@ if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
     echo "[Backup] Restoring OpenClaw data from GitHub..."
     git fetch -q origin main
     git reset -q --hard origin/main
-  else
-    echo "[Backup] Remote repo is empty; starting fresh."
   fi
 fi
 
-# Ensure workspace and .gitignore always exist
 mkdir -p /root/.openclaw/workspace
 cat << 'EOF' > /root/.openclaw/.gitignore
 .env
@@ -38,36 +34,27 @@ cat << 'EOF' > /root/.openclaw/.gitignore
 *.log
 EOF
 
-# 2. Create default openclaw.json ONLY if not already restored from GitHub
+# 2. Initialize or update openclaw.json instantaneously with jq (saves RAM & 15s boot time)
 if [ ! -f "/root/.openclaw/openclaw.json" ]; then
-  echo "[Init] Creating default openclaw.json..."
-  cat << 'EOF' > /root/.openclaw/openclaw.json
-{
-  "gateway": {
-    "mode": "local",
-    "bind": "lan",
-    "trustedProxies": ["0.0.0.0/0"]
-  },
-  "tools": {
-    "profile": "full",
-    "exec": {
-      "ask": "off"
-    }
-  }
-}
-EOF
+  echo '{}' > /root/.openclaw/openclaw.json
 fi
 
-# 3. Ensure Render proxy trust & WhatsApp allowlist are configured
-openclaw config set gateway.trustedProxies '["0.0.0.0/0"]' || true
+jq '.gateway.mode = "local"
+  | .gateway.bind = "lan"
+  | .gateway.trustedProxies = ["0.0.0.0/0"]
+  | .tools.profile = "full"
+  | .tools.exec.ask = "off"' /root/.openclaw/openclaw.json > /root/.openclaw/openclaw.json.tmp \
+  && mv /root/.openclaw/openclaw.json.tmp /root/.openclaw/openclaw.json
 
 if [ -n "$WHATSAPP_ALLOW_FROM" ]; then
-  openclaw config set channels.whatsapp.enabled true || true
-  openclaw config set channels.whatsapp.dmPolicy "allowlist" || true
-  openclaw config set channels.whatsapp.allowFrom "[\"$WHATSAPP_ALLOW_FROM\"]" || true
+  jq --arg num "$WHATSAPP_ALLOW_FROM" \
+    '.channels.whatsapp.enabled = true
+    | .channels.whatsapp.dmPolicy = "allowlist"
+    | .channels.whatsapp.allowFrom = [$num]' /root/.openclaw/openclaw.json > /root/.openclaw/openclaw.json.tmp \
+    && mv /root/.openclaw/openclaw.json.tmp /root/.openclaw/openclaw.json
 fi
 
-# 4. GitHub backup sync function & background loop
+# 3. GitHub backup sync function & background loop
 sync_to_github() {
   if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
     cd /root/.openclaw
@@ -91,7 +78,7 @@ if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
   ) &
 fi
 
-# 5. Start OpenClaw gateway immediately so Render detects port 10000
+# 4. Launch OpenClaw gateway directly on 0.0.0.0:$PORT
 echo "[Gateway] Starting OpenClaw on port ${PORT:-10000}..."
 cd /root/.openclaw/workspace
 openclaw gateway run --port "${PORT:-10000}" --bind lan &
