@@ -13,6 +13,7 @@ RUN npm install -g openclaw --no-audit --no-fund && npm cache clean --force
 RUN mkdir -p /root/.openclaw/workspace
 WORKDIR /root/.openclaw/workspace
 
+ARG CACHEBUST=3
 COPY entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
