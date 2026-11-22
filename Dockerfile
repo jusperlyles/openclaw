@@ -13,5 +13,8 @@ RUN npm install -g openclaw --no-audit --no-fund && npm cache clean --force
 RUN mkdir -p /root/.openclaw/workspace
 WORKDIR /root/.openclaw/workspace
 
+COPY entrypoint.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
+
 EXPOSE 10000
-CMD ["sh", "-c", "mkdir -p /root/.openclaw && printf '{\"gateway\":{\"mode\":\"local\",\"bind\":\"lan\"},\"tools\":{\"profile\":\"full\",\"exec\":{\"ask\":\"off\"}}}' > /root/.openclaw/openclaw.json && openclaw gateway run --port ${PORT:-10000} --bind lan"]
+ENTRYPOINT ["/entrypoint.sh"]
