@@ -34,7 +34,7 @@ cat << 'EOF' > /root/.openclaw/.gitignore
 *.log
 EOF
 
-# 2. Initialize or update openclaw.json instantaneously with jq (saves RAM & 15s boot time)
+# 2. Build openclaw.json instantaneously with jq
 if [ ! -f "/root/.openclaw/openclaw.json" ]; then
   echo '{}' > /root/.openclaw/openclaw.json
 fi
@@ -54,7 +54,7 @@ if [ -n "$WHATSAPP_ALLOW_FROM" ]; then
     && mv /root/.openclaw/openclaw.json.tmp /root/.openclaw/openclaw.json
 fi
 
-# 3. GitHub backup sync function & background loop
+# 3. Background GitHub sync loop
 sync_to_github() {
   if [ -n "$GITHUB_TOKEN" ] && [ -n "$GITHUB_REPO" ]; then
     cd /root/.openclaw
@@ -81,6 +81,6 @@ fi
 # 4. Launch OpenClaw gateway directly on 0.0.0.0:$PORT
 echo "[Gateway] Starting OpenClaw on port ${PORT:-10000}..."
 cd /root/.openclaw/workspace
-openclaw gateway run --port "${PORT:-10000}" --bind lan &
+openclaw gateway run --port "${PORT:-10000}" --bind lan --allow-unconfigured &
 PID=$!
 wait $PID
